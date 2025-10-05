@@ -1,0 +1,80 @@
+# inspect_and_verify_model_data.py
+
+import joblib
+import pandas as pd
+import os
+
+# =====================================================
+# Config
+# =====================================================
+VERIFIED_CSV = './data/inorganic_materials_featurized(1).csv'
+
+MODEL_PATHS = [
+    r"C:\Users\akima\composition\models\Real_hybrid_band_gap_model.joblib",
+    r"C:\Users\akima\composition\models\Real_stability_model.joblib"
+]
+
+# =====================================================
+# CSV comparison function
+# =====================================================
+def compare_dataframes(df1, df2):
+    if df1.shape != df2.shape:
+        return False, f"❌ Shape mismatch: {df1.shape} vs {df2.shape}"
+    if not df1.columns.equals(df2.columns):
+        return False, "❌ Columns differ"
+    if not df1.equals(df2):
+        return False, "❌ Content mismatch"
+    return True, "✅ Identical"
+
+# =====================================================
+# Main check
+# =====================================================
+if __name__ == "__main__":
+    print("--- Inspecting Models for Embedded Training Data ---")
+
+    try:
+        verified_df = pd.read_csv(VERIFIED_CSV)
+        print(f"Loaded verified CSV: {VERIFIED_CSV} (Shape: {verified_df.shape})\n")
+    except Exception as e:
+        print(f"❌ Could not load verified CSV: {e}")
+        exit()
+
+    for model_path in MODEL_PATHS:
+        print(f"Model: {os.path.basename(model_path)}")
+        try:
+            obj = joblib.load(model_path)
+        except Exception as e:
+            print(f"❌ Could not load model file. Error: {e}")
+            continue
+
+        # Try to detect if the saved object contains training data
+        found_df = None
+
+        # Case 1: Tuple or list containing a DataFrame
+        if isinstance(obj, (tuple, list)):
+            for item in obj:
+                if isinstance(item, pd.DataFrame):
+                    found_df = item
+                    break
+
+        # Case 2: Directly a DataFrame (unlikely for models)
+        elif isinstance(obj, pd.DataFrame):
+            found_df = obj
+
+        # Case 3: Model object with an attribute holding DataFrame
+        else:
+            for attr_name in dir(obj):
+                try:
+                    attr_value = getattr(obj, attr_name)
+                    if isinstance(attr_value, pd.DataFrame):
+                        found_df = attr_value
+                        break
+                except Exception:
+                    pass
+
+        if found_df is not None:
+            print(f"  📦 Found embedded DataFrame in model. Shape: {found_df.shape}")
+            identical, message = compare_dataframes(verified_df, found_df)
+            print(f"  Comparison result: {message}\n")
+        else:
+            print("  ⚠ No embedded training DataFrame found in this model.\n")
